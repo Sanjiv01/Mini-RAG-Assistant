@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+rag_venv/
+.env
+.cache/
+.pytest_cache/
+.streamlit/secrets.toml
+data/user_uploads/
+*.log
+.DS_Store
+.claude/

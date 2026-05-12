@@ -1,0 +1,12 @@
+streamlit>=1.40,<2
+transformers>=4.46,<5
+accelerate>=1.1,<2
+bitsandbytes>=0.45 ; platform_system != "Darwin"
+sentence-transformers>=3.3,<4
+faiss-cpu>=1.9,<2
+rank-bm25>=0.2,<1
+pypdf>=5.1,<6
+beautifulsoup4>=4.12,<5
+numpy>=1.26,<3
+python-dotenv>=1.0,<2
+pytest>=8.3,<9

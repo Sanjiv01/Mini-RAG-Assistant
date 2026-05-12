@@ -1,0 +1,89 @@
+{
+  "description": "Ground-truth questions for evaluating retrieval over data/sample_corpus.",
+  "questions": [
+    {
+      "id": "policy-retention",
+      "question": "How long are client engagement records retained?",
+      "expected_source_files": ["policies.md"],
+      "expected_substrings": ["seven (7) years"],
+      "is_off_topic": false
+    },
+    {
+      "id": "policy-pii",
+      "question": "When is personally identifiable information purged?",
+      "expected_source_files": ["policies.md"],
+      "expected_substrings": ["90 days"],
+      "is_off_topic": false
+    },
+    {
+      "id": "policy-expense-tier1",
+      "question": "What is the lodging per-diem in New York?",
+      "expected_source_files": ["policies.md"],
+      "expected_substrings": ["$325"],
+      "is_off_topic": false
+    },
+    {
+      "id": "policy-expense-deadline",
+      "question": "How late can an expense claim be submitted?",
+      "expected_source_files": ["policies.md"],
+      "expected_substrings": ["60 days"],
+      "is_off_topic": false
+    },
+    {
+      "id": "policy-incident-window",
+      "question": "How quickly must suspected credential exposure be reported?",
+      "expected_source_files": ["policies.md"],
+      "expected_substrings": ["2 hours"],
+      "is_off_topic": false
+    },
+    {
+      "id": "product-sla",
+      "question": "What uptime SLA do Enterprise customers get?",
+      "expected_source_files": ["product_faq.md"],
+      "expected_substrings": ["99.95%"],
+      "is_off_topic": false
+    },
+    {
+      "id": "product-team-price",
+      "question": "How much does the Team plan cost per month?",
+      "expected_source_files": ["product_faq.md"],
+      "expected_substrings": ["$1,499"],
+      "is_off_topic": false
+    },
+    {
+      "id": "product-regions",
+      "question": "Which regions can Insight be provisioned in?",
+      "expected_source_files": ["product_faq.md"],
+      "expected_substrings": ["us-east-1", "eu-west-1", "ap-south-1"],
+      "is_off_topic": false
+    },
+    {
+      "id": "process-sev1-response",
+      "question": "What is the response time for a Sev1 incident?",
+      "expected_source_files": ["process_manual.md"],
+      "expected_substrings": ["15 minutes"],
+      "is_off_topic": false
+    },
+    {
+      "id": "process-probation",
+      "question": "How long is the probation period for new hires?",
+      "expected_source_files": ["process_manual.md"],
+      "expected_substrings": ["90 days"],
+      "is_off_topic": false
+    },
+    {
+      "id": "off-topic-worldcup",
+      "question": "Who won the 2014 FIFA World Cup?",
+      "expected_source_files": [],
+      "expected_substrings": [],
+      "is_off_topic": true
+    },
+    {
+      "id": "off-topic-recipe",
+      "question": "What is the recipe for chocolate chip cookies?",
+      "expected_source_files": [],
+      "expected_substrings": [],
+      "is_off_topic": true
+    }
+  ]
+}
