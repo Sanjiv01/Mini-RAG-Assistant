@@ -1,68 +1,37 @@
-# Mini-RAG Assistant
+# Mini-RAG Assistant - *Hermes*
 
-A lightweight, fully-local Retrieval-Augmented Generation prototype. Upload PDFs / Markdown / text, ask a question, get a grounded answer with citations and a transparent confidence score. Refuses to answer when retrieved context isn't relevant enough.
+A lightweight, fully-local Retrieval-Augmented Generation prototype. Upload PDFs / Markdown / text or fetch live from URLs, ask a question, get a grounded answer with citations and a transparent confidence score. Refuses to answer when retrieved context isn't relevant enough.
 
-**Run it:** `streamlit run app.py` → sidebar → *Load sample corpus* → ask a question.
+I have named this **Hermes** (after the Greek messenger god - *Hermes delivers grounded answers from complex documents*).
+
+**Run it:** `streamlit run app.py` → *Knowledge Base* → *Load sample corpus* → *Chat* tab → ask a question.
 **Test it:** `pytest -q` (33 tests) and `python scripts/evaluate.py` (retrieval ablation).
 
 ---
 
 ## Architecture
 
-```
-                          USER QUERY
-                              │
-        ┌─────────────────────┴─────────────────────┐
-        ▼                                           ▼
-   BM25 (rank_bm25)                  Dense embeddings (BAAI/bge-small-en-v1.5)
-   top-20 hits                       FAISS IndexFlatIP, top-20 hits
-        │                                           │
-        └─────────────────┬─────────────────────────┘
-                          ▼
-                Reciprocal Rank Fusion (RRF, k=60)
-                          ▼
-            Cross-encoder reranker (BAAI/bge-reranker-base)
-            scores 20 (query, chunk) pairs → top-5
-                          ▼
-            CRAG-style gate: max(rerank_score) < τ ?
-                ┌─────────┴─────────┐
-                ▼                   ▼
-         REFUSE answer        Grounded prompt
-                              "Answer only from sources,
-                               cite as [Source N]"
-                                    ▼
-                    Qwen 2.5 7B Instruct (4-bit NF4)
-                    via transformers + bitsandbytes
-                                    ▼
-                    Confidence = 0.6·retrieval + 0.4·grounding
-                    (capped at retrieval)
-                                    ▼
-                    Answer + citations + matched-span
-                    highlights + Low/Med/High badge
-```
+![Pipeline architecture](images/architecture.png)
 
 Each retrieval stage is documented inline; the high-level orchestrator is [`rag/pipeline.py`](rag/pipeline.py).
 
 ### Why this stack
 
-| Technique | In the pipeline? | Reason |
-|---|---|---|
-| **Hybrid (BM25 + Dense + RRF)** | ✅ | Consulting documents are full of exact-term lookups (policy IDs, dollar amounts, dates, acronyms). BM25 catches the lexical needles; dense catches paraphrase. RRF combines them parameter-free. |
-| **Cross-encoder Reranker** | ✅ | Biggest single quality win in modern RAG. The reranker's score also doubles as a calibrated *relevance signal* — it's what powers the CRAG gate. Without it, off-topic questions get answered. |
-| **Structural Contextual Retrieval** | ✅ | Each chunk is embedded and reranked with a `[filename — section]` prefix derived from parsed headings. Cheap, deterministic stand-in for Anthropic's LLM-generated contextual preambles. |
-| **LLM-based Contextual Retrieval** | ✅ (optional, toggle in UI) | Anthropic-style: one-shot LLM call per chunk at ingestion to generate a 1-sentence "where this sits in the document" preamble. Boosts recall on table-heavy chunks. |
-| **CRAG-style confidence gate** | ✅ | Refuse rather than hallucinate when no retrieved chunk clears the threshold. |
-| Recursive heading-aware chunking | ✅ | 1200-char chunks, 200-char overlap. The chunker tracks original document positions so each chunk gets the correct governing heading. |
-| HyDE / Query expansion | ❌ | Extra LLM call per query (~+3 s); redundant once a reranker is in place. |
-| RAPTOR | ❌ | Ingestion-heavy (recursive summarisation); mostly helps multi-document synthesis, which our consulting corpus doesn't need. |
-| ColBERT / late interaction | ❌ | Different indexing infrastructure, harder Windows setup. The cross-encoder captures most of the same gain. |
+| Technique | Reason |
+|---|---|
+| **Hybrid (BM25 + Dense + RRF)** | Consulting documents are full of exact-term lookups (policy IDs, dollar amounts, dates, acronyms). BM25 catches the lexical needles; dense catches paraphrase. RRF combines them parameter-free. |
+| **Cross-encoder Reranker** | Biggest single quality win in modern RAG. The reranker's score also doubles as a calibrated *relevance signal* - it's what powers the CRAG gate. Without it, off-topic questions get answered. |
+| **Structural Contextual Retrieval** | Each chunk is embedded and reranked with a `[filename - section]` prefix derived from parsed headings. Cheap, deterministic stand-in for Anthropic's LLM-generated contextual preambles. |
+| **LLM-based Contextual Retrieval** | Anthropic-style: one-shot LLM call per chunk at ingestion to generate a 1-sentence "where this sits in the document" preamble. Boosts recall on table-heavy chunks. |
+| **CRAG-style confidence gate** | Refuse rather than hallucinate when no retrieved chunk clears the threshold. |
+| **Recursive heading-aware chunking** | 1200-char chunks, 200-char overlap. The chunker tracks original document positions so each chunk gets the correct governing heading. |
 
 ### Confidence-scoring method
 
 Two complementary signals, blended into a 0-100% score:
 
-1. **Retrieval confidence** — top reranker score. `BAAI/bge-reranker-base` emits values in [0, 1] from its single-label head, so we use it directly.
-2. **Grounding confidence** — fraction of answer 4-grams (stop-words stripped) that also appear in the concatenated retrieved context. Deterministic, no extra model call.
+1. **Retrieval confidence** - top reranker score. `BAAI/bge-reranker-base` emits values in [0, 1] from its single-label head, so we use it directly.
+2. **Grounding confidence** - fraction of answer 4-grams (stop-words stripped) that also appear in the concatenated retrieved context. Deterministic, no extra model call.
 
 ```python
 final = min(retrieval, 0.6·retrieval + 0.4·grounding)
@@ -78,6 +47,32 @@ If the best reranker score is below `CRAG_THRESHOLD` (default 0.001) the system 
 
 ---
 
+## Screenshots
+
+> The UI is built with Streamlit + a custom CSS layer. Light theme, blue primary, green for source-grounding highlights and confidence accents. The app is branded **Hermes** in-product.
+
+**Home page** - lifetime stats, quick actions, "How It Works" technical breakdown, brief-requirements coverage panel, and the live retrieval-evaluation ablation table.
+
+![Home page](images/home.png)
+
+**Knowledge Base** - load the bundled sample corpus, upload local PDFs / TXT / MD, or fetch documents directly from a URL (PDF or HTML). Each indexed doc is shown with type icon, size or source host, ingestion time, and status.
+
+![Knowledge Base](images/knowledgebase.png)
+
+**Chat - grounded answer with confidence and inline citations.** Confidence badge sits at the top of every assistant message. Phrases that appear verbatim in retrieved sources are underlined in green; inline `[N]` pills link to the matching source card below.
+
+![Chat - grounded answer](images/chat1.png)
+
+**Chat - citation panel expanded.** Each cited source shows its filename, section heading, and the three retrieval scores (rerank, dense, BM25) so a reviewer can audit exactly which chunk drove which claim.
+
+![Chat - citation panel](images/chat2.png)
+
+**Models** - pick the language model that powers Hermes. Currently ships with Qwen 2.5 7B Instruct (4-bit NF4); the abstraction in `rag/generate.py` is set up for additional backends.
+
+![Models page](images/models.png)
+
+---
+
 ## Setup
 
 ```powershell
@@ -88,7 +83,11 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124   # see "GP
 pip install -r requirements.txt
 ```
 
-The embedding model (`bge-small-en-v1.5`, ~120 MB) and reranker (`bge-reranker-base`, ~280 MB) auto-download on first use. The LLM (`Qwen/Qwen2.5-7B-Instruct`, ~15 GB) downloads only when you actually run a generation in the app (button: *Reload models* with `real` backend selected, or call `python -c "from rag.generate import TransformersLLM; TransformersLLM().load()"`).
+The embedding model (`bge-small-en-v1.5`, ~120 MB) and reranker (`bge-reranker-base`, ~280 MB) auto-download on first use. The LLM (`Qwen/Qwen2.5-7B-Instruct`, ~15 GB) auto-downloads on the first chat question. To pre-warm before a demo:
+
+```powershell
+python -c "from rag.generate import make_llm; make_llm()"
+```
 
 ### Run it
 
@@ -112,7 +111,7 @@ USE_4BIT=false
 LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
 ```
 
-…to fall back to BF16 3B (~6 GB VRAM, no quantization dependency). For CPU-only machines, additionally set `LLM_DEVICE=cpu` — generation will be slow (~30 s/answer) but functional.
+…to fall back to BF16 3B (~6 GB VRAM, no quantization dependency). For CPU-only machines, additionally set `LLM_DEVICE=cpu` - generation will be slow (~30 s/answer) but functional.
 
 ---
 
@@ -124,11 +123,11 @@ LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
 |---|---:|---:|---:|---:|
 | Dense only | 0.48 | 1.00 | 1.00 | **0.00** |
 | Hybrid (BM25+dense+RRF) | 0.46 | 1.00 | 1.00 | **0.00** |
-| Hybrid + Reranker | 0.46 | 1.00 | 1.00 | **1.00** |
+| Hybrid + Reranker | **0.52** | 1.00 | 1.00 | **1.00** |
 
-**Recall@5 = 1.0** across the board — for our 10 in-corpus eval questions, the right source file always lands in the top-5. **Grounding = 1.0** — every expected substring is present in the retrieved context. The retrieval is solid.
+**Recall@5 = 1.0** across the board - for our 10 in-corpus eval questions, the right source file always lands in the top-5. **Grounding = 1.0** - every expected substring is present in the retrieved context. The retrieval is solid.
 
-The headline number is **Guardrail accuracy**: only the reranker-enabled strategy refuses off-topic questions. Dense / hybrid retrieval *always* return their top-5 because they have no calibrated relevance signal. **The reranker isn't just for ordering — it's the confidence signal that makes refusal possible.** Without it, the system would confidently invent answers to questions like "who won the 2014 FIFA World Cup?" using the closest cosine match.
+The headline number is **Guardrail accuracy**: only the reranker-enabled strategy refuses off-topic questions. Dense / hybrid retrieval *always* return their top-5 because they have no calibrated relevance signal. **The reranker isn't just for ordering - it's the confidence signal that makes refusal possible.** Without it, the system would confidently invent answers to questions like "who won the 2014 FIFA World Cup?" using the closest cosine match.
 
 Precision@5 hovers around 0.5 because each eval question expects one source file and the top-5 naturally includes some chunks from neighbouring files (only 11 chunks across 3 docs). Recall and grounding are the meaningful retrieval metrics here.
 
@@ -136,7 +135,7 @@ Precision@5 hovers around 0.5 because each eval question expects one source file
 
 ## Example I/O
 
-[`examples/sample_responses.json`](examples/sample_responses.json) captures answers + citations + confidence for every question in the eval set. Two illustrative samples:
+Captures answers + citations + confidence for every question in the eval set. Two illustrative samples:
 
 ```jsonc
 {
@@ -163,17 +162,45 @@ Precision@5 hovers around 0.5 because each eval question expects one source file
 }
 ```
 
-UI screenshots live in [`examples/screenshots/`](examples/screenshots/).
+Full screenshots of the running UI live in [`images/`](images/) and are embedded above.
+
+---
+
+## Data sources
+
+Hermes accepts documents from three ingestion paths, all flowing through the same FAISS + BM25 index:
+
+| Source type | How to add | Implementation |
+|---|---|---|
+| **Bundled sample corpus** | Knowledge Base → *Load sample corpus* | 3 synthetic consulting-firm docs in [`data/sample_corpus/`](data/sample_corpus/): policy manual, product FAQ, process manual. Generated specifically to mirror the brief's "internal policies, process manuals, product guides" framing. |
+| **Local file upload** | Knowledge Base → *+ Add Document* | PDF (parsed via `pypdf`, AES-encrypted PDFs supported via the `cryptography` backend), Markdown, and plain text. |
+| **Remote URL fetch** | Knowledge Base → *+ Add from URL* | Public PDF or HTML URLs. HTML is cleaned with BeautifulSoup (`<script>`, `<nav>`, `<footer>` stripped). Network calls use stdlib `urllib` with a 30 s timeout. Implementation in [`rag/url_loader.py`](rag/url_loader.py). |
+
+The eval set in [`eval/eval_questions.json`](eval/eval_questions.json) is hand-curated against the sample corpus: 10 in-corpus questions with expected source files + expected substrings, plus 2 deliberately off-topic questions for the CRAG guardrail measurement.
+
+For the public-document demo bundle used in the recorded walkthrough, four sources were indexed:
+
+| # | Document | Source | Type |
+|---|---|---|---|
+| 1 | **DJI Mini 4 Pro User Manual** | <https://dl.djicdn.com/downloads/DJI_Mini_4_Pro/20240115/DJI_Mini_4_Pro_User_Manual_EN.pdf> | PDF (~118 pages, official DJI) |
+| 2 | **DJI Mini 4 Pro UAS Flight Manual** | <https://dl.djicdn.com/downloads/DJI_Mini_4_Pro/UAS_Flight+Manual_DJI_Model_DJI_Mini_4_Pro_EN.pdf> | PDF (official DJI, AES-encrypted) |
+| 3 | **DJI Mini 4 Pro photo camera settings guide** | <https://vicvideopic.com/dji-mini-4-pro-photo-camera-settings-for-epic-photography/> | HTML article (third-party) |
+| 4 | **DJI Mini 4 Pro beginner's guide with Beth Priday** | <https://www.cliftoncameras.co.uk/Blog/dji-mini-4-pro-beginners-guide-with-beth-priday> | HTML article (third-party) |
+
+All four are public, free, and ingestable through the standard Knowledge Base flow - the official DJI PDFs go through the **+ Add Document** path (or **+ Add from URL** if your network allows it; some DJI CDN URLs return 403 to non-browser User-Agents), and the two HTML articles can be added via **+ Add from URL** directly.
+
+This bundle mixes **official technical documentation** (specs, safety, regulatory) with **third-party community knowledge** (photography tips, beginner walkthroughs) - so cross-document questions like *"What should a first-time pilot know about the Mini 4 Pro?"* genuinely require retrieval to route across multiple files.
 
 ---
 
 ## Project layout
 
 ```
-app.py                       # Streamlit UI
+app.py                       # Streamlit UI (Hermes branding, 4 tabs)
 rag/
   config.py                  # env-driven settings (Settings dataclass)
   ingest.py                  # PDF/TXT/MD load + heading-aware chunker
+  url_loader.py              # PDF/HTML fetch from public URLs
   embed.py                   # sentence-transformers embedder (CPU)
   store.py                   # FAISS + BM25 + parallel chunk metadata
   retrieve.py                # hybrid search + RRF
@@ -191,6 +218,9 @@ scripts/
   evaluate.py                # retrieval eval + ablation (LLM-free, fast)
   ingest_folder.py           # CLI: index any folder of PDFs
   dump_examples.py           # snapshot Q/A/citations into examples/sample_responses.json
+examples/
+  sample_responses.json      # 12 Q/A snapshots with citations + scores
+images/                      # UI screenshots embedded in this README
 tests/                       # 33 pytest tests
 ```
 
@@ -198,14 +228,20 @@ tests/                       # 33 pytest tests
 
 ## Adding your own documents
 
-```powershell
-# Programmatic ingest:
-python scripts/ingest_folder.py path/to/your/docs
+Three paths, all flowing into the same retrieval pipeline:
 
-# Or just drag-and-drop in the Streamlit sidebar (uploader supports PDF / TXT / MD).
+```powershell
+# 1. Drag-and-drop in the UI: Knowledge Base → "+ Add Document"
+#    Supports PDF (incl. AES-encrypted), Markdown, plain text.
+
+# 2. Fetch from a public URL in the UI: Knowledge Base → "+ Add from URL"
+#    Supports public PDF or HTML pages. HTML is cleaned with BeautifulSoup.
+
+# 3. Programmatic batch ingest from the command line:
+python scripts/ingest_folder.py path/to/your/docs
 ```
 
-Contextual Retrieval can be toggled per ingestion. Default is **on** (slower but better recall on tables and lists). For very large uploads, turn it off to skip the per-chunk LLM call.
+Contextual Retrieval (one LLM call per chunk at ingestion to generate a 1-sentence locator preamble - Anthropic's technique) is **off by default**. It can be enabled via `CONTEXTUAL_RETRIEVAL=true` in `.env` - useful on small policy-heavy corpora; skip it for multi-hundred-page documents where ingestion would take many minutes.
 
 ---
 
@@ -226,21 +262,8 @@ The pipeline test (`tests/test_pipeline.py`) uses an `_EchoLLM` stub so CI doesn
 - **No LangChain / LlamaIndex.** Direct code is easier for a reviewer to read end-to-end and avoids version churn. The whole retrieval pipeline is ~250 lines across `retrieve.py`, `rerank.py`, `store.py`.
 - **`faiss-cpu`, not `faiss-gpu`.** For corpora up to ~100k chunks, flat-index search is dominated by LLM latency. Saves a CUDA build path.
 - **Embedder + reranker on CPU.** Frees the 8 GB GPU for the LLM. Reranking 20 pairs on CPU is ~400 ms, well below LLM generation time.
-- **Recall over precision for small corpora.** With only 11 chunks across 3 files, top-5 will always include some neighbouring-file chunks. That's fine — the reranker re-orders and the LLM cites correctly.
-- **Static `[filename — section]` prefix** is a deterministic stand-in for LLM-based Contextual Retrieval, and bg-reranker scores improve measurably with it. The LLM-based version is layered on top, opt-in for ingestion-time cost.
+- **Recall over precision for small corpora.** With only 11 chunks across 3 files, top-5 will always include some neighbouring-file chunks. That's fine - the reranker re-orders and the LLM cites correctly.
+- **Static `[filename - section]` prefix** is a deterministic stand-in for LLM-based Contextual Retrieval, and bg-reranker scores improve measurably with it. The LLM-based version is layered on top, opt-in for ingestion-time cost.
 - **Anti-hallucination via reranker confidence**, not via answer-text classification. This catches off-topic questions *before* prompting the LLM, saving a wasted generation.
 
 ---
-
-## Limitations & not-yet-done
-
-- **Reranker truncation on long chunks.** `bge-reranker-base` has a 512-token context; chunks at the 1200-char ceiling occasionally get truncated. A `bge-reranker-large` or `bge-reranker-v2-m3` would help but is ~1.5 GB.
-- **No persistent index across Streamlit reloads.** The store is rebuilt per session. Persistence to `.cache/` is implemented in [`rag/store.py`](rag/store.py) but not auto-wired into the app.
-- **Table chunks are heuristic.** A markdown-table-aware chunker would keep header rows attached to data rows even at smaller chunk sizes. For this corpus, raising `CHUNK_SIZE` keeps tables intact in practice.
-- **No streaming output.** The Streamlit response renders after generation completes; for a polished demo, `model.generate(streamer=...)` could pipe tokens live.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).

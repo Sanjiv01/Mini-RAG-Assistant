@@ -35,7 +35,7 @@ NAV_ITEMS = [
 TAB_INFO = {
     "home": "Overview of your knowledge base, recent activity, and shortcuts.",
     "knowledge_base": "Manage the documents Hermes can retrieve from.",
-    "chat": "Ask grounded questions and get answers cited from your documents.",
+    "chat": "Ask questions and get grounded answers cited from your documents.",
     "models": "Pick the language model that powers Hermes.",
 }
 
@@ -1003,7 +1003,8 @@ def _init_state() -> None:
         # UI-only metadata for the document list. The actual store is in RAG.
         st.session_state.documents = []
     if "selected_model" not in st.session_state:
-        st.session_state.selected_model = AVAILABLE_MODELS[0]["id"]
+        # Reflect whichever model the env config currently points at.
+        st.session_state.selected_model = settings.llm_model
     if "kb_pending_action" not in st.session_state:
         st.session_state.kb_pending_action = None
     if "lifetime_stats" not in st.session_state:
@@ -1108,7 +1109,7 @@ def _render_home() -> None:
         f"<div class='hm-hero-title'>{PRODUCT_NAME}</div>"
         f"<div class='hm-hero-sub'>"
         f"Greek god of messengers. Hermes delivers grounded answers from complex "
-        f"documents — upload your corpus, ask anything, and see exactly which "
+        f"documents - upload your corpus, ask anything, and see exactly which "
         f"sources backed each claim."
         f"</div>"
         f"</div>"
@@ -1144,7 +1145,7 @@ def _render_home() -> None:
     with qa2:
         st.markdown(
             _qa_card("⬆", "Upload Documents",
-                     "Add your own PDF, TXT, or MD files to the knowledge base.",
+                     "Add your own PDF, TXT, MD files or links to websites to the knowledge base.",
                      "green"),
             unsafe_allow_html=True,
         )
@@ -1155,7 +1156,7 @@ def _render_home() -> None:
     with qa3:
         st.markdown(
             _qa_card("✦", "Start Chatting",
-                     "Ask grounded questions and get answers cited from your docs.",
+                     "Ask questions and get grounded answers cited from your docs.",
                      "purple"),
             unsafe_allow_html=True,
         )
@@ -1236,7 +1237,7 @@ def _render_home() -> None:
 
     # Requirements coverage — directly maps to the brief's deliverable table.
     st.markdown(
-        "<div class='hm-section-title'>Brief Requirements Coverage</div>",
+        "<div class='hm-section-title'>Objective Requirements Coverage</div>",
         unsafe_allow_html=True,
     )
 
@@ -1265,11 +1266,11 @@ def _render_home() -> None:
         ),
         (
             "done", "Multi-turn conversation context",
-            "Last 4 turns of history are passed into the prompt, bounded to keep context size predictable.",
+            "Last 10 turns of history are passed into the prompt, bounded to keep context size predictable.",
         ),
         (
             "done", "Toggle between local and cloud data sources",
-            "Documents can be loaded from local files (PDF / TXT / MD) or fetched live from URLs (PDF or HTML). Both paths flow through the same FAISS + BM25 index.",
+            "Documents can be loaded from both local files (PDF / TXT / MD) or fetched live from URLs (PDF or HTML). Both paths flow through the same FAISS + BM25 index.",
         ),
         (
             "done", "Evaluation metrics: precision@k or grounding accuracy",
@@ -1294,7 +1295,7 @@ def _render_home() -> None:
 
     st.markdown(
         f"<div class='hm-cov-wrap'>"
-        f"<div class='hm-cov-title'>📋 Requirements from the brief</div>"
+        f"<div class='hm-cov-title'>📋 Requirements from the objective</div>"
         f"<div class='hm-cov-group'>Core Functionality (4 / 4)</div>"
         f"{core_rows}"
         f"<div class='hm-cov-group'>Optional Enhancements (4 / 4)</div>"
@@ -1302,7 +1303,6 @@ def _render_home() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
-
 
 # ---------- KNOWLEDGE BASE PAGE ---------------------------------------------
 
@@ -1395,10 +1395,15 @@ def _add_documents_dialog() -> None:
                         "uploaded_at": time.time(),
                     })
                 bar = st.progress(0.0, text="Indexing…")
-                added = rag.ingest_paths(
-                    paths, contextual=False,  # kept off per design
-                    progress=lambda p: bar.progress(p, text=f"Indexing… {p:.0%}"),
-                )
+                try:
+                    added = rag.ingest_paths(
+                        paths, contextual=False,  # kept off per design
+                        progress=lambda p: bar.progress(p, text=f"Indexing… {p:.0%}"),
+                    )
+                except Exception as exc:
+                    bar.empty()
+                    st.error(f"Couldn't index file(s): {exc}")
+                    return
                 bar.empty()
             # Stash UI metadata
             for m in meta:

@@ -11,4 +11,3 @@ rag_venv/
 data/user_uploads/
 *.log
 .DS_Store
-.claude/
